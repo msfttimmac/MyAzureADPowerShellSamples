@@ -1,0 +1,37 @@
+# This section is to help automate the script so you don't have to login each time
+    # you do not have to utilize this script and just enter the information in the dialogs as they appear
+    $User = "<O365 Global Admin User Account Name Goes Here>"
+    $PWord = ConvertTo-SecureString -String "<O365 Global Admin User Password Goes Here>" -AsPlainText -Force
+    $UserCredential = New-Object -TypeName "System.Management.Automation.PSCredential" -ArgumentList $User, $PWord
+
+    # This connects to Azure AD and then pulls all the users into an array
+    # If you do not use the automation above, then remove the variable $UserCredential
+    Connect-AzureAD -Credential $UserCredential
+    $GetMyUsers = Get-AzureADUser
+    # We then loop through all of the users to discover the license information
+    $GetMyUsers | ForEach-Object{
+        #setting up some initial variables
+        $GetUserLicenseCount = 0
+        $GetUserDisplayName = $_.DisplayName
+        $GetAssignedLicenses = $_.AssignedLicenses
+        $LicenseInfo = ""
+        # Check the count of the licenses
+        if($GetAssignedLicenses.Count -eq 0){ $LicenseInfo = "( No Licenses )" }
+        else {
+            # Pulls the details of the assigned licenses and puts them into a string
+            $GetUserLicenses = (Get-AzureADUserLicenseDetail -ObjectId $_.ObjectId).ServicePlans 
+            $GetUserLicenseCount = $GetUserLicenses.Count
+            $GetUserLicenses | ForEach-Object{ $LicenseInfo = if($LicenseInfo -ne ""){$LicenseInfo + ";`r`n" + $_.ServicePlanName + "( " + $_.ServicePlanID + " ) Provisioning Status: " +  $_.ProvisioningStatus }else{$_.ServicePlanName + "( " + $_.ServicePlanID + " ) Provisioning Status: " +  $_.ProvisioningStatus    } }
+        }
+        #Building an object to add the license information too
+        $UserObject = New-Object PSObject
+        $UserObject | Add-Member -MemberType NoteProperty -Name "User Display Name" -Value $GetUserDisplayName
+        $UserObject | Add-Member -MemberType NoteProperty -Name "User Object ID" -Value $_.ObjectId
+        $UserObject | Add-Member -MemberType NoteProperty -Name "User UserPrincipalName" -Value $_.UserPrincipalName
+        $UserObject | Add-Member -MemberType NoteProperty -Name "User Licenses Count" -Value $GetUserLicenseCount
+        $UserObject | Add-Member -MemberType NoteProperty -Name "User Licenses" -Value $LicenseInfo
+        # Writing to a Temporary File - you can put this in any location you desire and change the name of the file
+        $UserObject | Export-Csv "C:\Temp\UserLicenseDump.csv" -Append
+        # Resetting the variable
+        $GetUserLicenseCount = 0
+    }
